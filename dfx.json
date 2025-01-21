@@ -1,0 +1,17 @@
+{
+  "canisters": {
+    "safe_upgrade_backend": {
+      "candid": "src/safe_upgrade_backend/safe_upgrade_backend.did",
+      "package": "safe_upgrade_backend",
+      "type": "rust"
+    }
+  },
+  "defaults": {
+    "build": {
+      "args": "",
+      "packtool": ""
+    }
+  },
+  "output_env_file": ".env",
+  "version": 1
+}

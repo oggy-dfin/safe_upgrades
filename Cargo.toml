@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "src/safe_upgrade_backend"
+]
+resolver = "2"
