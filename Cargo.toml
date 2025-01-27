@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "src/safe_canister_upgrades",
     "src/safe_upgrade_backend"
 ]
 resolver = "2"
