@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 candid = "0.10"
-ic-cdk = { git = "https://github.com/dfinity/cdk-rs.git", rev = "d823cb53ceb5574ef511bbcdb0d6b8ef85a3ec2b" }
+ic-cdk = { git = "https://github.com/dfinity/cdk-rs.git", rev = "1ea79d0502f9d602fec5b13d912cb9f0e7ef3a05" }
 serde_bytes = "0.11.15"
 
 [lib]

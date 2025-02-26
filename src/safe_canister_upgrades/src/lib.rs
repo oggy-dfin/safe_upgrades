@@ -6,13 +6,14 @@ use ic_cdk::api::{
     },
 };
 use ic_cdk::api::time;
-use ic_cdk::call::{Call, RejectCode};
+use ic_cdk::call::{Call, CallErrorExt};
 
 pub mod retry;
 use retry::{
-    retry_idempotent_best_effort_response_call_until, retry_nonidempotent_best_effort_response_call_until,
-    RetryError, Deadline, Unretriable,
+    retry_idempotent_bounded_wait_call_until, retry_nonidempotent_best_effort_response_call_until,
+    RetryError, Deadline,
 };
+use crate::retry::ErrorCause;
 
 /// Represents a canister's principal ID on the IC.
 pub type CanisterId = Principal;
@@ -134,8 +135,8 @@ pub async fn upgrade_canister_until(
             // Note that for installation, unretriable errors include `SysUnknown`
             // Try to figure out what happened using the version and retry if the version
             // hasn't moved
-            Err(RetryError::Fatal(Unretriable::Reject(rejection)))
-            if rejection.reject_code() == RejectCode::SysUnknown =>
+            Err(RetryError::StatusUnknown(ErrorCause::CallFailed(rejection)))
+            if !rejection.is_clean_reject() =>
                 {
                     let new_version = best_effort_canister_info(target_id, &deadline)
                         .await
@@ -166,11 +167,12 @@ async fn best_effort_stop(
     target_id: Principal,
     deadline: &Deadline,
 ) -> Result<(), RetryError> {
-    retry_idempotent_best_effort_response_call_until(
-        Call::new(Principal::management_canister(), "stop_canister").with_arg(target_id.clone()),
+    Ok(retry_idempotent_bounded_wait_call_until(
+        Call::bounded_wait(Principal::management_canister(), "stop_canister").with_arg(target_id.clone()),
         deadline,
     )
-        .await
+        // TODO: don't unwrap here
+        .await?.candid().unwrap())
 }
 
 /// Start a canister with best-effort calls until success or timeout.
@@ -178,11 +180,12 @@ async fn best_effort_start(
     target_id: CanisterId,
     deadline: &Deadline,
 ) -> Result<(), RetryError> {
-    retry_idempotent_best_effort_response_call_until(
-        Call::new(Principal::management_canister(), "start_canister").with_arg(target_id),
+    Ok(retry_idempotent_bounded_wait_call_until(
+        Call::bounded_wait(Principal::management_canister(), "start_canister").with_arg(target_id),
         deadline,
     )
-        .await
+        // TODO: don't unwrap here
+        .await?.candid().unwrap())
 }
 
 /// Retrieve canister info (including module hash) with best-effort calls.
@@ -195,11 +198,12 @@ async fn best_effort_canister_info(
         num_requested_changes: None,
     };
 
-    retry_idempotent_best_effort_response_call_until(
-        Call::new(Principal::management_canister(), "canister_info").with_arg(arg),
+    Ok(retry_idempotent_bounded_wait_call_until(
+        Call::bounded_wait(Principal::management_canister(), "canister_info").with_arg(arg),
         deadline,
     )
-        .await
+        // TODO: don't unwrap here
+        .await?.candid().unwrap())
 }
 
 /// Install a small (<2MB) WASM in a single call via `install_code`.
@@ -219,11 +223,12 @@ async fn best_effort_install_single_chunk(
         arg: arg.to_vec(),
     };
 
-    retry_nonidempotent_best_effort_response_call_until(
-        Call::new(Principal::management_canister(), "install_code").with_arg(&install_args),
+    Ok(retry_nonidempotent_best_effort_response_call_until(
+        Call::bounded_wait(Principal::management_canister(), "install_code").with_arg(&install_args),
         deadline,
     )
-        .await
+        // TODO: don't unwrap here
+        .await?.candid().unwrap())
 }
 
 #[allow(dead_code)]
@@ -233,13 +238,14 @@ async fn upload_chunks(
     deadline: &Deadline,
 ) -> Result<(), RetryError> {
     // First, clear the chunk store. This is idempotent, so we can retry.
-    let call = Call::new(Principal::management_canister(), "clear_chunk_store").with_arg(
+    let call = Call::bounded_wait(Principal::management_canister(), "clear_chunk_store").with_arg(
         ClearChunkStoreArgument {
             canister_id: store_canister_id,
         },
     );
 
-    let _: () = retry_idempotent_best_effort_response_call_until(call, deadline).await?;
+    // TODO: don't unwrap here?
+    let _: () = retry_idempotent_bounded_wait_call_until(call, deadline).await?.candid().unwrap();
 
     for chunk in chunks {
         let chunk_install_args = UploadChunkArgument {
@@ -248,9 +254,10 @@ async fn upload_chunks(
         };
 
         // Uploading chunks is also idempotent, so we can retry.
-        let call = Call::new(Principal::management_canister(), "upload_chunk")
+        let call = Call::bounded_wait(Principal::management_canister(), "upload_chunk")
             .with_arg(chunk_install_args);
-        let _: () = retry_idempotent_best_effort_response_call_until(call, deadline).await?;
+        // TODO: don't unwrap here
+        let _: () = retry_idempotent_bounded_wait_call_until(call, deadline).await?.candid().unwrap();
     }
     Ok(())
 }
@@ -277,8 +284,9 @@ async fn best_effort_install_chunked(
     };
 
     let install_call =
-        Call::new(Principal::management_canister(), "install_chunked_code").with_arg(&install_args);
-    retry_nonidempotent_best_effort_response_call_until(install_call, deadline).await
+        Call::bounded_wait(Principal::management_canister(), "install_chunked_code").with_arg(&install_args);
+    let res = retry_nonidempotent_best_effort_response_call_until(install_call, deadline).await?;
+    Ok(res.candid().unwrap())
 }
 
 /// Returns the “deadline” as a nanosecond timestamp (IC time), or `None` if the timeout is only “UntilCallerStopping”.
